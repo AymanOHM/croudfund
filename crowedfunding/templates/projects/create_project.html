@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Create Project - Crowdfunding Platform{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="text-center">Create a New Project</h3>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {{ project_form|crispy }}
+                    
+                    <div class="mb-3">
+                        <label for="id_images" class="form-label">Project Images</label>
+                        <input type="file" name="images" class="form-control" multiple required>
+                        <div class="form-text">Upload multiple images for your project. The first image will be used as the cover.</div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 mt-3">Create Project</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

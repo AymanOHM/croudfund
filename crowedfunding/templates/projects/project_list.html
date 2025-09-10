@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Projects - Crowdfunding Platform{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>Browse Projects</h1>
+    </div>
+    <div class="col-md-6">
+        <form method="get" class="d-flex">
+            <input type="text" name="q" class="form-control me-2" placeholder="Search projects..." value="{{ search_query }}">
+            <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h5>Categories</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{% url 'project_list' %}" class="list-group-item list-group-item-action {% if not selected_category %}active{% endif %}">All Categories</a>
+                {% for category in categories %}
+                <a href="{% url 'project_list' %}?category={{ category.id }}" class="list-group-item list-group-item-action {% if selected_category == category.id %}active{% endif %}">
+                    {{ category.name }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
+        <div class="row">
+            {% for project in page_obj %}
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <img src="{{ project.pictures.first.image.url }}" class="card-img-top" alt="{{ project.title }}">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ project.title }}</h5>
+                        <p class="card-text">{{ project.details|truncatewords:20 }}</p>
+                        <div class="progress mb-2">
+                            <div class="progress-bar" role="progressbar" data-percentage="{{project.donation_percentage}}"></div>
+                        </div>
+                        <p class="mb-1">${{ project.total_donations|floatformat:0|intcomma }} raised of ${{ project.total_target|intcomma }}</p>
+                        <p class="text-muted">{{ project.donation_percentage|floatformat:0 }}% funded</p>
+                    </div>
+                    <div class="card-footer">
+                        <a href="{% url 'project_detail' project.id %}" class="btn btn-primary btn-sm">View Details</a>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-12">
+                <div class="alert alert-info">No projects found.</div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if page_obj.has_other_pages %}
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">Previous</a>
+                </li>
+                {% endif %}
+                
+                {% for num in page_obj.paginator.page_range %}
+                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">{{ num }}</a>
+                </li>
+                {% endfor %}
+                
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const progressBars = document.querySelectorAll('.progress-bar');
+    progressBars.forEach(bar => {
+        const percentage = bar.getAttribute('data-percentage');
+        bar.style.width = Math.round(percentage) + '%';
+    });
+});
+</script>
+
+{% endblock %}
+

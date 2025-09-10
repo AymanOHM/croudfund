@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}My Profile - Crowdfunding Platform{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <img src="{{ user.profile_picture.url }}" alt="Profile Picture" class="rounded-circle mb-3" width="150" height="150">
+                <h4>{{ user.get_full_name }}</h4>
+                <p class="text-muted">{{ user.email }}</p>
+                <p><i class="fas fa-phone"></i> {{ user.mobile_phone }}</p>
+                {% if user.country %}<p><i class="fas fa-globe"></i> {{ user.country }}</p>{% endif %}
+                {% if user.birthdate %}<p><i class="fas fa-birthday-cake"></i> {{ user.birthdate }}</p>{% endif %}
+                {% if user.facebook_profile %}<p><i class="fab fa-facebook"></i> <a href="{{ user.facebook_profile }}" target="_blank">Facebook Profile</a></p>{% endif %}
+                <a href="{% url 'edit_profile' %}" class="btn btn-outline-primary btn-sm">Edit Profile</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>My Projects</h5>
+            </div>
+            <div class="card-body">
+                {% if user.projects.all %}
+                <div class="list-group">
+                    {% for project in user.projects.all %}
+                    <a href="{% url 'project_detail' project.id %}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ project.title }}</h6>
+                            <small>{{ project.created_at|date }}</small>
+                        </div>
+                        <p class="mb-1">{{ project.details|truncatewords:10 }}</p>
+                        <small>{{ project.donation_percentage|floatformat:0 }}% funded • ${{ project.total_donations|floatformat:0|intcomma }} raised</small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">You haven't created any projects yet.</p>
+                <a href="{% url 'create_project' %}" class="btn btn-primary">Create Your First Project</a>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5>My Donations</h5>
+            </div>
+            <div class="card-body">
+                {% if user.donations.all %}
+                <div class="list-group">
+                    {% for donation in user.donations.all %}
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ donation.project.title }}</h6>
+                            <strong>${{ donation.amount }}</strong>
+                        </div>
+                        <small class="text-muted">Donated on {{ donation.donated_at|date }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">You haven't made any donations yet.</p>
+                <a href="{% url 'project_list' %}" class="btn btn-primary">Browse Projects</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

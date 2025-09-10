@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ project.title }} - Crowdfunding Platform{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div id="projectCarousel" class="carousel slide" data-bs-ride="carousel">
+                <div class="carousel-inner">
+                    {% for picture in project.pictures.all %}
+                    <div class="carousel-item {% if forloop.first %}active{% endif %}">
+                        <img src="{{ picture.image.url }}" class="d-block w-100" style="height: 400px; object-fit: cover;" alt="{{ project.title }}">
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if project.pictures.count > 1 %}
+                <button class="carousel-control-prev" type="button" data-bs-target="#projectCarousel" data-bs-slide="prev">
+                    <span class="carousel-control-prev-icon"></span>
+                </button>
+                <button class="carousel-control-next" type="button" data-bs-target="#projectCarousel" data-bs-slide="next">
+                    <span class="carousel-control-next-icon"></span>
+                </button>
+                {% endif %}
+            </div>
+            
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h1 class="card-title">{{ project.title }}</h1>
+                    <div>
+                        {% if user.is_authenticated and user == project.creator %}
+                        {% if project.donation_percentage < 25 %}
+                        <form action="{% url 'cancel_project' project.id %}" method="post" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-danger btn-sm">Cancel Project</button>
+                        </form>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <p class="text-muted">Created by {{ project.creator.get_full_name }} • {{ project.created_at|date }}</p>
+                
+                <div class="progress mb-3" style="height: 25px;">
+                    <div class="progress-bar" role="progressbar" data-percentage="{{project.donation_percentage}}" aria-valuenow="{{ project.donation_percentage }}" aria-valuemin="0" aria-valuemax="100">
+                        {{ project.donation_percentage|floatformat:0 }}%
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-between mb-4">
+                    <div>
+                        <strong>${{ project.total_donations|floatformat:0|intcomma }}</strong>
+                        <p class="text-muted mb-0">raised of ${{ project.total_target|intcomma }}</p>
+                    </div>
+                    <div>
+                        <strong>{{ project.donations.count }}</strong>
+                        <p class="text-muted mb-0">donors</p>
+                    </div>
+                    <div>
+                        <strong>{{ project.end_time|timeuntil }}</strong>
+                        <p class="text-muted mb-0">left to donate</p>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <h4>Details</h4>
+                    <p>{{ project.details }}</p>
+                </div>
+                
+                <div class="mb-4">
+                    <h4>Tags</h4>
+                    {% for tag in project.tags.all %}
+                    <span class="badge bg-secondary me-1">{{ tag.name }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4>Donate to this Project</h4>
+            </div>
+            <div class="card-body">
+                {% if user.is_authenticated %}
+                <form action="{% url 'donate' project.id %}" method="post">
+                    {% csrf_token %}
+                    <div class="input-group mb-3">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="amount" class="form-control" placeholder="Enter amount" min="1" required>
+                        <button type="submit" class="btn btn-primary">Donate Now</button>
+                    </div>
+                </form>
+                {% else %}
+                <p class="text-center">Please <a href="{% url 'login' %}">login</a> to make a donation.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-body text-center">
+                <div class="mb-3">
+                    <h2>{{ project.average_rating|floatformat:1 }}/5</h2>
+                    <div class="text-warning">
+                        {% for i in "12345" %}
+                        {% if forloop.counter <= project.average_rating %}
+                        <i class="fas fa-star"></i>
+                        {% else %}
+                        <i class="far fa-star"></i>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    <p class="text-muted">Based on {{ project.ratings.count }} ratings</p>
+                </div>
+                
+                {% if user.is_authenticated %}
+                {% if user_rating %}
+                <p>You rated this project: <strong>{{ user_rating.value }}/5</strong></p>
+                {% else %}
+                <form action="{% url 'rate_project' project.id %}" method="post">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <select name="value" class="form-select" required>
+                            <option value="">Rate this project</option>
+                            <option value="1">1 Star</option>
+                            <option value="2">2 Stars</option>
+                            <option value="3">3 Stars</option>
+                            <option value="4">4 Stars</option>
+                            <option value="5">5 Stars</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary w-100">Submit Rating</button>
+                </form>
+                {% endif %}
+                {% else %}
+                <p><a href="{% url 'login' %}">Login</a> to rate this project</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Recent Donations</h5>
+            </div>
+            <div class="card-body">
+                {% if donations %}
+                <div class="list-group">
+                    {% for donation in donations %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <strong>{{ donation.user.get_full_name }}</strong>
+                            <span>${{ donation.amount }}</span>
+                        </div>
+                        <small class="text-muted">{{ donation.donated_at|timesince }} ago</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center">No donations yet. Be the first to donate!</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5>Similar Projects</h5>
+            </div>
+            <div class="card-body">
+                {% if similar_projects %}
+                <div class="list-group">
+                    {% for project in similar_projects %}
+                    <a href="{% url 'project_detail' project.id %}" class="list-group-item list-group-item-action">
+                        <h6 class="mb-1">{{ project.title }}</h6>
+                        <small>{{ project.donation_percentage|floatformat:0 }}% funded</small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center">No similar projects found.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const progressBars = document.querySelectorAll('.progress-bar');
+    progressBars.forEach(bar => {
+        const percentage = bar.getAttribute('data-percentage');
+        bar.style.width = Math.round(percentage) + '%';
+    });
+});
+</script>
+{% endblock %}
