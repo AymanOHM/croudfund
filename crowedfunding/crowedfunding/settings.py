@@ -1,6 +1,7 @@
 
 import os
 from pathlib import Path
+import dj_database_url  # Added for PostgreSQL URL parsing
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -58,12 +59,24 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'crowedfunding.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Database
+# Default to SQLite for local development if no DATABASE_URL is provided.
+# To use PostgreSQL set an environment variable, e.g.:
+#   export DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DBNAME
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+if DATABASE_URL:
+    # conn_max_age enables persistent connections; adjust as needed (0 to disable)
+    DATABASES = {
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600, ssl_require=False)
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {

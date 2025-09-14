@@ -8,6 +8,10 @@ crispy-bootstrap5==2024.2
 # Image handling for ImageField
 Pillow==10.4.0
 
+# PostgreSQL (switch capable)
+psycopg2-binary==2.9.9
+dj-database-url==2.2.0
+
 # (Optional) Uncomment for development/testing utilities
 # pytest==8.3.2
 # pytest-django==4.8.0

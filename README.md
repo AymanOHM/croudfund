@@ -5,7 +5,7 @@ A Django-based educational crowdfunding platform built for course practice. Focu
 ## 1. Tech Stack
 - Python 3.x
 - Django 5.x
-- SQLite (default dev DB)
+- SQLite (default dev DB) / PostgreSQL (optional via `DATABASE_URL`)
 - `django-crispy-forms` + `crispy-bootstrap5`
 - Pillow (image handling)
 - Bootstrap 5 (UI)
@@ -56,29 +56,29 @@ If later comments are reused across multiple entities (e.g., updates, user profi
 
 ## 5. Simplified Task List
 Core tasks (course scope):
-1. Remove single-donation restriction (drop `unique_together` on `Donation`).
-2. Validate project dates (`end_time > start_time`) and block donations to cancelled or expired projects.
-3. Introduce `DonationForm` with positive amount validation; refactor donate view.
-4. Add placeholder/fallback image logic when a project has no pictures.
-5. (Optional) Add `slug` to `Project` and use slug in detail URLs.
-6. Implement project edit view (only before any donation exists).
-7. Make cancel project action POST-only and enforce <25% funded rule.
-8. Add a simple dashboard (lists user’s projects and donations).
-9. Enable comment edit & delete (author only) with conditional template buttons.
-10. Prevent self-rating (and optionally self-donation if desired).
-11. Prefetch related objects in project list/detail (`pictures`, `tags`, `creator`, `category`).
-12. Improve progress bar accessibility text and ensure images have alt attributes.
-13. Guard templates against missing `project.pictures.first` everywhere.
-14. Provide custom 404 and 500 templates.
-15. Review admin filters/search; tweak labels if needed.
-16. Update README after implementing tasks.
-17. Add manual QA checklist section.
-18. (Optional) Seed data command or documented manual steps.
+1. ~~Remove single-donation restriction (drop `unique_together` on `Donation`).~~
+2. ~~Validate project dates (`end_time > start_time`) and block donations to cancelled or expired projects.~~
+3. ~~Introduce `DonationForm` with positive amount validation; refactor donate view.~~
+4. ~~Add placeholder/fallback image logic when a project has no pictures.~~
+5. ~~(Optional) Add `slug` to `Project` and use slug in detail URLs.~~
+6. ~~Implement project edit view (only before any donation exists).~~
+7. ~~Make cancel project action POST-only and enforce <25% funded rule.~~
+8. ~~Add a simple dashboard (lists user’s projects and donations).~~
+9. (Pending) Enable comment edit & delete (author only) – NOT YET IMPLEMENTED.
+10. ~~Prevent self-rating (and optionally self-donation if desired).~~ (self-donation allowed by design; only rating blocked)
+11. ~~Prefetch related objects in project list/detail (`pictures`, `tags`, `creator`, `category`).~~ + added composite DB index & category name index.
+12. ~~Improve progress bar accessibility text and ensure images have alt attributes.~~
+13. ~~Guard templates against missing `project.pictures.first` everywhere.~~
+14. ~~Provide custom 404 and 500 templates.~~ (Ensure DEBUG=False in prod to see them)
+15. ~~Review admin filters/search; tweak labels if needed.~~ (Added ordering, date_hierarchy, autocomplete)
+16. ~~Update README after implementing tasks.~~ (This revision)
+17. ~~Add manual QA checklist section.~~ (See `QA_CHECKLIST.md`)
+18. ~~(Optional) Seed data command or documented manual steps.~~ (`seed_projects` command added)
 
-Nice-to-have after core:
-19. Separate activation vs password reset tokens.
-20. Add simple `ProjectUpdate` model for progress notes.
-21. Basic homepage caching (short TTL).
+Nice-to-have after core (not started unless marked):
+19. Separate activation vs password reset tokens. (PENDING)
+20. Add simple `ProjectUpdate` model for progress notes. (PENDING)
+21. Basic homepage caching (short TTL). (PENDING)
 
 Comments stay in the `projects` app for simplicity (see Comments Location Decision above).
 
@@ -121,15 +121,70 @@ python manage.py createsuperuser
 
 # Run dev server
 python manage.py runserver
+
+# (Optional) Seed sample data
+python manage.py seed --users 5 --projects 12 --donations 40
 ```
 Media uploads stored in `media/`. Static assets collected (if needed) into `static/` when running `collectstatic`.
+
+### Seeding Details
+Management command: `seed`
+
+Args:
+- `--users <int>` number of regular users to ensure (default 5)
+- `--projects <int>` number of projects (default 12)
+- `--donations <int>` donation records to create (default 40)
+- `--flush-existing` wipe existing projects/categories/tags/donations first (keeps users)
+
+Behavior:
+- Ensures at least 3 user accounts (creates `seeduserX@example.com` if needed)
+- Creates baseline categories & tags
+- Generates projects with random start/end windows, targets, tags, and featured flag
+- Adds random donations across projects & users
+
+Example full reset:
+```bash
+python manage.py seed --flush-existing --users 8 --projects 20 --donations 80
+```
+
+### Switching to PostgreSQL
+Set an environment variable `DATABASE_URL` before running migrations. Example (macOS/Linux):
+```bash
+export DATABASE_URL=postgres://myuser:mypassword@localhost:5432/crowdfund_dev
+python manage.py migrate
+```
+If `DATABASE_URL` is absent, the app falls back to SQLite. Dependencies added: `psycopg2-binary`, `dj-database-url`.
+
+Migrating existing SQLite data to Postgres:
+```bash
+python manage.py dumpdata --natural-primary --natural-foreign --indent 2 > data.json
+export DATABASE_URL=postgres://myuser:mypassword@localhost:5432/crowdfund_dev
+python manage.py migrate
+python manage.py loaddata data.json
+```
+
+### Threaded Comments (Replies)
+Comments now support a single reply level. Implementation details:
+- Self-referential FK `Comment.parent` with related name `replies`.
+- Top-level comments: `parent=None`.
+- Replies displayed indented beneath parent; quick toggle reply form in UI.
+- POST endpoint unchanged (`add_comment`); supply hidden `parent_id` field to create a reply.
+
+Example HTML (simplified):
+```html
+<form action="/projects/<slug>/comment/" method="post">
+	<input type="hidden" name="parent_id" value="{{ comment.id }}" />
+	<textarea name="content"></textarea>
+	<button>Post Reply</button>
+</form>
+```
 
 ## 11. Future Stretch Ideas
 - REST API (Django REST Framework)
 - Real-time donation updates (Django Channels)
 - Full-text search (PostgreSQL if switching DB)
 - Internationalization (translation tags)
-- Accessibility improvements (ARIA for progress bars, alt text for images)
+- Further accessibility enhancements (keyboard nav focus states, skip links)
 
 ## 12. Glossary
 - Donation Percentage: `sum(donations) / total_target * 100`

@@ -5,10 +5,12 @@ from django.db.models import Q, Avg, Count
 from django.core.paginator import Paginator
 from django.utils import timezone
 from .models import Project, ProjectPicture, Donation, Comment, Rating, Report, Category, Tag
-from .forms import ProjectForm, ProjectPictureForm, CommentForm, RatingForm, ReportForm
+from .forms import ProjectForm, ProjectPictureForm, CommentForm, RatingForm, ReportForm, DonationForm
 
 def project_list(request):
-    projects = Project.objects.filter(is_cancelled=False, end_time__gt=timezone.now())
+    projects = (Project.objects.filter(is_cancelled=False, end_time__gt=timezone.now())
+                .select_related('category', 'creator')
+                .prefetch_related('tags', 'pictures'))
     
     category_id = request.GET.get('category')
     if category_id:
@@ -34,11 +36,37 @@ def project_list(request):
         'search_query': search_query or ''
     })
 
-def project_detail(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
-    donations = project.donations.order_by('-donated_at')[:5]
-    comments = project.comments.filter(parent=None).order_by('-created_at')
+@login_required
+def dashboard(request):
+    user = request.user
+    user_projects = (Project.objects.filter(creator=user)
+                     .select_related('category')
+                     .prefetch_related('pictures', 'tags'))
+    user_donations = (Donation.objects.filter(user=user)
+                      .select_related('project', 'project__creator')
+                      .order_by('-donated_at'))
+    return render(request, 'projects/dashboard.html', {
+        'user_projects': user_projects,
+        'user_donations': user_donations
+    })
+
+def project_detail(request, slug):
+    project = get_object_or_404(
+        Project.objects.select_related('category', 'creator')
+               .prefetch_related(
+                    'tags',
+                    'pictures',
+                    'comments__user',           # top-level comment authors
+                    'comments__replies__user',  # reply authors to avoid N+1
+                    'donations__user',
+                    'ratings'
+                ),
+        slug=slug
+    )
+    donations = project.donations.select_related('user').order_by('-donated_at')[:5]
+    comments = project.comments.select_related('user').filter(parent=None).order_by('-created_at')
     user_rating = None
+    donation_form = DonationForm()
     
     if request.user.is_authenticated:
         try:
@@ -46,11 +74,14 @@ def project_detail(request, project_id):
         except Rating.DoesNotExist:
             pass
     
-    similar_projects = Project.objects.filter(
-        tags__in=project.tags.all(), 
+    similar_projects = (Project.objects.filter(
+        tags__in=project.tags.all(),
         is_cancelled=False,
         end_time__gt=timezone.now()
-    ).exclude(id=project.id).distinct()[:4]
+    ).exclude(id=project.id)
+     .select_related('category', 'creator')
+     .prefetch_related('tags', 'pictures')
+     .distinct()[:4])
     
     return render(request, 'projects/project_detail.html', {
         'project': project,
@@ -58,6 +89,7 @@ def project_detail(request, project_id):
         'comments': comments,
         'user_rating': user_rating,
         'similar_projects': similar_projects,
+    'donation_form': donation_form,
     })
 
 @login_required
@@ -83,7 +115,7 @@ def create_project(request):
                 ProjectPicture.objects.create(project=project, image=picture)
             
             messages.success(request, 'Project created successfully.')
-            return redirect('project_detail', project_id=project.id)
+            return redirect('project_detail', slug=project.slug)
     else:
         project_form = ProjectForm()
         picture_form = ProjectPictureForm()
@@ -94,33 +126,58 @@ def create_project(request):
     })
 
 @login_required
-def donate(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
-    
+def edit_project(request, slug):
+    project = get_object_or_404(Project, slug=slug, creator=request.user)
+    if project.donations.exists():
+        messages.error(request, 'Cannot edit a project after donations have been made.')
+        return redirect('project_detail', slug=project.slug)
     if request.method == 'POST':
-        amount = request.POST.get('amount')
-        try:
-            amount = float(amount)
-            if amount <= 0:
-                messages.error(request, 'Donation amount must be positive.')
-                return redirect('project_detail', project_id=project.id)
-            
-            Donation.objects.create(
-                project=project,
-                user=request.user,
-                amount=amount
-            )
-            
+        form = ProjectForm(request.POST, instance=project)
+        if form.is_valid():
+            updated = form.save(commit=False)
+            # retain creator
+            updated.creator = project.creator
+            updated.save()
+            # update tags
+            tags = form.cleaned_data['tags']
+            project.tags.clear()
+            if tags:
+                tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+                for tag_name in tag_list:
+                    tag, _ = Tag.objects.get_or_create(name=tag_name)
+                    project.tags.add(tag)
+            messages.success(request, 'Project updated successfully.')
+            return redirect('project_detail', slug=project.slug)
+    else:
+        # populate tags field with comma-separated names
+        initial = {'tags': ', '.join(project.tags.values_list('name', flat=True))}
+        form = ProjectForm(instance=project, initial=initial)
+    return render(request, 'projects/edit_project.html', {'form': form, 'project': project})
+
+@login_required
+def donate(request, slug):
+    project = get_object_or_404(Project, slug=slug)
+    # Block donations if project cancelled or expired
+    now = timezone.now()
+    if project.is_cancelled or project.end_time <= now:
+        messages.error(request, 'Donations are closed for this project.')
+    return redirect('project_detail', slug=project.slug)
+    if request.method == 'POST':
+        form = DonationForm(request.POST)
+        if form.is_valid():
+            donation = form.save(commit=False)
+            donation.project = project
+            donation.user = request.user
+            donation.save()
             messages.success(request, 'Thank you for your donation!')
-            return redirect('project_detail', project_id=project.id)
-        except ValueError:
-            messages.error(request, 'Invalid donation amount.')
-    
+        else:
+            for error in form.errors.values():
+                messages.error(request, error)
     return redirect('project_detail', project_id=project.id)
 
 @login_required
-def add_comment(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+def add_comment(request, slug):
+    project = get_object_or_404(Project, slug=slug)
     
     if request.method == 'POST':
         form = CommentForm(request.POST)
@@ -140,15 +197,18 @@ def add_comment(request, project_id):
             comment.save()
             messages.success(request, 'Comment added successfully.')
     
-    return redirect('project_detail', project_id=project.id)
+    return redirect('project_detail', slug=project.slug)
 
 @login_required
-def rate_project(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+def rate_project(request, slug):
+    project = get_object_or_404(Project, slug=slug)
     
     if request.method == 'POST':
         form = RatingForm(request.POST)
         if form.is_valid():
+            if project.creator_id == request.user.id:
+                messages.error(request, 'You cannot rate your own project.')
+                return redirect('project_detail', slug=project.slug)
             rating_value = form.cleaned_data['value']
             
             rating, created = Rating.objects.update_or_create(
@@ -159,7 +219,7 @@ def rate_project(request, project_id):
             
             messages.success(request, 'Rating submitted successfully.')
     
-    return redirect('project_detail', project_id=project.id)
+    return redirect('project_detail', slug=project.slug)
 
 @login_required
 def report_content(request, content_type, content_id):
@@ -179,20 +239,27 @@ def report_content(request, content_type, content_id):
             messages.success(request, 'Report submitted successfully. Thank you for helping us keep the platform safe.')
     
     if content_type == 'project':
-        return redirect('project_detail', project_id=content_id)
+        project = get_object_or_404(Project, id=content_id)
+        return redirect('project_detail', slug=project.slug)
     else:
         comment = get_object_or_404(Comment, id=content_id)
-        return redirect('project_detail', project_id=comment.project.id)
+        return redirect('project_detail', slug=comment.project.slug)
 
 @login_required
-def cancel_project(request, project_id):
-    project = get_object_or_404(Project, id=project_id, creator=request.user)
-    
-    if project.donation_percentage < 25:
+def cancel_project(request, slug):
+    project = get_object_or_404(Project, slug=slug, creator=request.user)
+    if request.method != 'POST':
+        messages.error(request, 'Cancellation must be performed via POST request.')
+        return redirect('project_detail', slug=project.slug)
+    if project.is_cancelled:
+        messages.info(request, 'Project already cancelled.')
+        return redirect('project_detail', slug=project.slug)
+    percentage = project.donation_percentage
+    if percentage < 25:
         project.is_cancelled = True
-        project.save()
+        project.save(update_fields=['is_cancelled'])
         messages.success(request, 'Project cancelled successfully.')
     else:
-        messages.error(request, 'Cannot cancel project. Donations have exceeded 25% of the target.')
-    
-    return redirect('project_detail', project_id=project.id)
+        messages.error(request, 'Cannot cancel project. Donations have reached or exceeded 25% of the target.')
+
+    return redirect('project_detail', slug=project.slug)

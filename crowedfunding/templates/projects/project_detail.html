@@ -9,11 +9,17 @@
         <div class="card mb-4">
             <div id="projectCarousel" class="carousel slide" data-bs-ride="carousel">
                 <div class="carousel-inner">
-                    {% for picture in project.pictures.all %}
-                    <div class="carousel-item {% if forloop.first %}active{% endif %}">
-                        <img src="{{ picture.image.url }}" class="d-block w-100" style="height: 400px; object-fit: cover;" alt="{{ project.title }}">
-                    </div>
-                    {% endfor %}
+                    {% if project.pictures.count %}
+                        {% for picture in project.pictures.all %}
+                        <div class="carousel-item {% if forloop.first %}active{% endif %}">
+                            <img src="{{ picture.image.url }}" class="d-block w-100" style="height: 400px; object-fit: cover;" alt="Image for {{ project.title }} ({{ forloop.counter }} of {{ project.pictures.count }})">
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="carousel-item active">
+                            <img src="https://placehold.co/800x400?text=No+Project+Images" class="d-block w-100" style="height: 400px; object-fit: cover;" alt="Placeholder image: no images uploaded for this project">
+                        </div>
+                    {% endif %}
                 </div>
                 {% if project.pictures.count > 1 %}
                 <button class="carousel-control-prev" type="button" data-bs-target="#projectCarousel" data-bs-slide="prev">
@@ -31,10 +37,13 @@
                     <div>
                         {% if user.is_authenticated and user == project.creator %}
                         {% if project.donation_percentage < 25 %}
-                        <form action="{% url 'cancel_project' project.id %}" method="post" class="d-inline">
+                        <form action="{% url 'cancel_project' project.slug %}" method="post" class="d-inline">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-outline-danger btn-sm">Cancel Project</button>
                         </form>
+                        {% endif %}
+                        {% if not project.donations.exists %}
+                        <a href="{% url 'edit_project' project.slug %}" class="btn btn-outline-secondary btn-sm ms-2">Edit Project</a>
                         {% endif %}
                         {% endif %}
                     </div>
@@ -42,8 +51,9 @@
                 
                 <p class="text-muted">Created by {{ project.creator.get_full_name }} • {{ project.created_at|date }}</p>
                 
-                <div class="progress mb-3" style="height: 25px;">
-                    <div class="progress-bar" role="progressbar" data-percentage="{{project.donation_percentage}}" aria-valuenow="{{ project.donation_percentage }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress mb-3" style="height: 25px;" role="img" aria-label="Project is {{ project.donation_percentage|floatformat:0 }} percent funded">
+                    <div class="progress-bar" role="progressbar" data-percentage="{{project.donation_percentage}}" aria-valuenow="{{ project.donation_percentage|floatformat:0 }}" aria-valuemin="0" aria-valuemax="100">
+                        <span class="visually-hidden">{{ project.donation_percentage|floatformat:0 }}% funded</span>
                         {{ project.donation_percentage|floatformat:0 }}%
                     </div>
                 </div>
@@ -83,7 +93,7 @@
             </div>
             <div class="card-body">
                 {% if user.is_authenticated %}
-                <form action="{% url 'donate' project.id %}" method="post">
+                <form action="{% url 'donate' project.slug %}" method="post">
                     {% csrf_token %}
                     <div class="input-group mb-3">
                         <span class="input-group-text">$</span>
@@ -116,10 +126,12 @@
                 </div>
                 
                 {% if user.is_authenticated %}
-                {% if user_rating %}
+                {% if user.id == project.creator.id %}
+                <p class="text-muted">You can't rate your own project.</p>
+                {% elif user_rating %}
                 <p>You rated this project: <strong>{{ user_rating.value }}/5</strong></p>
                 {% else %}
-                <form action="{% url 'rate_project' project.id %}" method="post">
+                <form action="{% url 'rate_project' project.slug %}" method="post">
                     {% csrf_token %}
                     <div class="mb-2">
                         <select name="value" class="form-select" required>
@@ -171,7 +183,7 @@
                 {% if similar_projects %}
                 <div class="list-group">
                     {% for project in similar_projects %}
-                    <a href="{% url 'project_detail' project.id %}" class="list-group-item list-group-item-action">
+                    <a href="{% url 'project_detail' project.slug %}" class="list-group-item list-group-item-action">
                         <h6 class="mb-1">{{ project.title }}</h6>
                         <small>{{ project.donation_percentage|floatformat:0 }}% funded</small>
                     </a>
@@ -192,6 +204,81 @@ document.addEventListener('DOMContentLoaded', function() {
         const percentage = bar.getAttribute('data-percentage');
         bar.style.width = Math.round(percentage) + '%';
     });
+        // Toggle reply forms
+        document.querySelectorAll('[data-reply-toggle]')?.forEach(btn => {
+                btn.addEventListener('click', () => {
+                        const target = document.getElementById(btn.dataset.replyToggle);
+                        if (target) {
+                                target.classList.toggle('d-none');
+                        }
+                });
+        });
 });
 </script>
+
+<hr class="my-5" />
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0">Comments ({{ project.comments.count }})</h4>
+        </div>
+        {% if user.is_authenticated %}
+        <form action="{% url 'add_comment' project.slug %}" method="post" class="mb-4">
+                {% csrf_token %}
+                <div class="mb-2">
+                        <textarea name="content" class="form-control" rows="3" placeholder="Add a public comment" required></textarea>
+                </div>
+                <button class="btn btn-primary btn-sm">Post Comment</button>
+        </form>
+        {% else %}
+        <p><a href="{% url 'login' %}">Login</a> to post a comment.</p>
+        {% endif %}
+
+        {% if comments %}
+            <ul class="list-unstyled">
+                {% for comment in comments %}
+                    <li class="mb-4">
+                        <div class="border rounded p-3">
+                            <div class="d-flex justify-content-between">
+                                <strong>{{ comment.user.get_full_name|default:comment.user.email }}</strong>
+                                <small class="text-muted">{{ comment.created_at|timesince }} ago</small>
+                            </div>
+                            <p class="mb-2 mt-2">{{ comment.content }}</p>
+                            {% if user.is_authenticated %}
+                            <button type="button" class="btn btn-link btn-sm p-0" data-reply-toggle="reply-form-{{ comment.id }}">Reply</button>
+                            {% endif %}
+                            <div id="reply-form-{{ comment.id }}" class="mt-2 d-none">
+                                <form action="{% url 'add_comment' project.slug %}" method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="parent_id" value="{{ comment.id }}" />
+                                    <div class="mb-2">
+                                        <textarea name="content" rows="2" class="form-control" placeholder="Write a reply..." required></textarea>
+                                    </div>
+                                    <button class="btn btn-outline-secondary btn-sm">Post Reply</button>
+                                </form>
+                            </div>
+                            {% if comment.replies.all %}
+                                <ul class="list-unstyled mt-3 ms-4 border-start ps-3">
+                                    {% for reply in comment.replies.all %}
+                                    <li class="mb-3">
+                                        <div>
+                                            <div class="d-flex justify-content-between">
+                                                <strong>{{ reply.user.get_full_name|default:reply.user.email }}</strong>
+                                                <small class="text-muted">{{ reply.created_at|timesince }} ago</small>
+                                            </div>
+                                            <p class="mb-1 mt-1">{{ reply.content }}</p>
+                                        </div>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">No comments yet.</p>
+        {% endif %}
+    </div>
+</div>
 {% endblock %}

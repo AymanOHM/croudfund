@@ -5,7 +5,8 @@ from django.core.validators import MinValueValidator
 User = get_user_model()
 
 class Category(models.Model):
-    name = models.CharField(max_length=100)
+    # Indexed for faster filtering/grouping by category name in listings & admin
+    name = models.CharField(max_length=100, db_index=True)
     description = models.TextField(blank=True)
     
     def __str__(self):
@@ -29,6 +30,7 @@ class Project(models.Model):
     is_featured = models.BooleanField(default=False)
     is_cancelled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    slug = models.SlugField(max_length=220, unique=True, blank=True)
     
     def __str__(self):
         return self.title
@@ -48,6 +50,35 @@ class Project(models.Model):
         avg = self.ratings.aggregate(avg_rating=models.Avg('value'))['avg_rating']
         return avg if avg else 0
 
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.end_time and self.start_time and self.end_time <= self.start_time:
+            raise ValidationError({'end_time': 'End time must be later than start time.'})
+
+    def save(self, *args, **kwargs):
+        from django.utils.text import slugify
+        base_slug = slugify(self.title)[:200]
+        if not self.slug or Project.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
+            slug = base_slug
+            counter = 1
+            while Project.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(end_time__gt=models.F('start_time')),
+                name='project_end_after_start'
+            )
+        ]
+        indexes = [
+            # Speeds up queries filtering active/cancelled and ordering or filtering by end_time
+            models.Index(fields=['is_cancelled', 'end_time'], name='project_cancel_end_idx')
+        ]
+
 class ProjectPicture(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='pictures')
     image = models.ImageField(upload_to='project_pictures/')
@@ -60,9 +91,6 @@ class Donation(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='donations')
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(1)])
     donated_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ('project', 'user')
     
     def __str__(self):
         return f"{self.user.email} donated {self.amount} to {self.project.title}"

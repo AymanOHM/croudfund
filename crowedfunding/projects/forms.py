@@ -1,5 +1,5 @@
 from django import forms
-from .models import Project, ProjectPicture, Comment, Rating, Report
+from .models import Project, ProjectPicture, Comment, Rating, Report, Donation
 
 class ProjectForm(forms.ModelForm):
     tags = forms.CharField(required=False, help_text="Enter tags separated by commas")
@@ -34,3 +34,14 @@ class ReportForm(forms.ModelForm):
         widgets = {
             'reason': forms.Textarea(attrs={'rows': 3}),
         }
+
+class DonationForm(forms.ModelForm):
+    class Meta:
+        model = Donation
+        fields = ['amount']
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get('amount')
+        if amount is None or amount <= 0:
+            raise forms.ValidationError('Donation amount must be positive.')
+        return amount
