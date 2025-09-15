@@ -1,9 +1,13 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.core.files.base import ContentFile
 from decimal import Decimal
 import random
 import string
+import os
+import io
+from PIL import Image, ImageDraw, ImageFont
 from projects.models import Category, Tag, Project, ProjectPicture, Donation, Comment, Rating
 
 User = get_user_model()
@@ -27,12 +31,19 @@ class Command(BaseCommand):
     help = "Seed sample users, categories, tags, projects, and donations for local development (idempotent-ish)."
 
     def add_arguments(self, parser):
+        """Register CLI arguments for the seed command."""
+        # Core quantities
         parser.add_argument('--users', type=int, default=5, help='Number of random non-superuser accounts to ensure')
         parser.add_argument('--projects', type=int, default=12, help='Number of projects to create (may reuse existing titles)')
         parser.add_argument('--donations', type=int, default=40, help='Approximate number of donations to generate')
         parser.add_argument('--comments', type=int, default=60, help='Approximate number of top-level comments to generate')
         parser.add_argument('--max-replies', type=int, default=2, help='Maximum replies per top-level comment (random 0..max)')
         parser.add_argument('--flush-existing', action='store_true', help='Delete existing seeded domain data (projects/categories/tags/donations/comments/ratings) but keep users & superuser intact')
+        # Images
+        parser.add_argument('--with-images', action='store_true', help='Generate profile pictures & project pictures if missing')
+        parser.add_argument('--force-images', action='store_true', help='Regenerate images even if already set/created')
+        parser.add_argument('--project-images-min', type=int, default=1, help='Minimum project images to ensure per project when using --with-images')
+        parser.add_argument('--project-images-max', type=int, default=3, help='Maximum project images to ensure per project when using --with-images')
 
     def handle(self, *args, **options):
         project_count = options['projects']
@@ -41,6 +52,51 @@ class Command(BaseCommand):
         max_replies = max(0, options['max_replies'])
         user_target = options['users']
         flush = options['flush_existing']
+        with_images = options['with_images']
+        force_images = options['force_images']
+        pimg_min = max(0, options['project_images_min'])
+        pimg_max = max(pimg_min, options['project_images_max'])
+
+        # Pre-calc media root
+        from django.conf import settings
+        media_root = settings.MEDIA_ROOT
+        os.makedirs(os.path.join(media_root, 'profile_pictures'), exist_ok=True)
+        os.makedirs(os.path.join(media_root, 'project_pictures'), exist_ok=True)
+
+        def random_bg_color():
+            # Avoid too-dark backgrounds
+            return tuple(random.randint(60, 200) for _ in range(3))
+
+        def make_text_image(text: str, size=(256, 256), font_size=96):
+            img = Image.new('RGB', size, random_bg_color())
+            draw = ImageDraw.Draw(img)
+            try:
+                # Attempt to load a common font; fallback gracefully
+                font = ImageFont.truetype('arial.ttf', font_size)
+            except Exception:
+                font = ImageFont.load_default()
+            # Center text
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            pos = ((size[0] - tw) / 2, (size[1] - th) / 2 - 5)
+            draw.text(pos, text, fill='white', font=font)
+            return img
+
+        def make_project_banner(text: str, size=(800, 450)):
+            img = Image.new('RGB', size, random_bg_color())
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype('arial.ttf', 40)
+            except Exception:
+                font = ImageFont.load_default()
+            display = (text[:40] + '…') if len(text) > 40 else text
+            bbox = draw.textbbox((0, 0), display, font=font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            pos = ((size[0] - tw) / 2, (size[1] - th) / 2 - 10)
+            draw.text(pos, display, fill='white', font=font)
+            return img
 
         if flush:
             self.stdout.write(self.style.WARNING('Flushing existing projects/categories/tags/donations'))
@@ -173,6 +229,43 @@ class Command(BaseCommand):
                     Comment.objects.create(project=p, user=replier, content=reply_text, parent=c)
                     replies_created += 1
 
+        user_images_generated = 0
+        project_images_generated = 0
+
+        if with_images:
+            # Profile pictures
+            for user in users:
+                needs = force_images or (not user.profile_picture or user.profile_picture.name.endswith('default.png'))
+                if not needs:
+                    continue
+                initials = ''.join([user.first_name[:1] or 'U', user.last_name[:1] or 'X']).upper()
+                img = make_text_image(initials)
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                buf.seek(0)
+                filename = f"avatar_{user.id}.png"
+                user.profile_picture.save(filename, ContentFile(buf.read()), save=True)
+                user_images_generated += 1
+
+            # Project pictures
+            for project in Project.objects.all():
+                existing = project.pictures.count()
+                target = random.randint(pimg_min, pimg_max) if pimg_max > 0 else 0
+                if force_images:
+                    # Delete existing and recreate
+                    project.pictures.all().delete()
+                    existing = 0
+                to_add = max(0, target - existing)
+                for idx in range(to_add):
+                    banner = make_project_banner(project.title)
+                    buf = io.BytesIO()
+                    banner.save(buf, format='PNG')
+                    buf.seek(0)
+                    fname = f"project_{project.id}_{idx+1}.png"
+                    pic = ProjectPicture(project=project)
+                    pic.image.save(fname, ContentFile(buf.read()), save=True)
+                    project_images_generated += 1
+
         self.stdout.write(self.style.SUCCESS(
             "Seed complete:\n"
             f"  Users added: {len(created_users)} (total regular: {len(users)})\n"
@@ -180,5 +273,7 @@ class Command(BaseCommand):
             f"  Donations: {donation_created}\n"
             f"  Ratings: {rating_created}\n"
             f"  Top-level comments: {top_comments_created}\n"
-            f"  Replies: {replies_created}"
+            f"  Replies: {replies_created}\n"
+            f"  User images generated: {user_images_generated}\n"
+            f"  Project images generated: {project_images_generated}"
         ))
