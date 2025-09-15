@@ -42,19 +42,38 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-### Sample Data
+### Sample Data & Images
+Seed realistic data (users, projects, donations, comments, ratings):
 ```bash
-python manage.py seed --users 6 --projects 15 --donations 60 --comments 80 --max-replies 2
+python manage.py seed --users 6 --projects 15 --donations 60 --comments 80 --max-replies 2 --with-images
 ```
 Add `--flush-existing` to wipe projects/categories/tags/donations/comments/ratings (keeps users & superusers).
 
-### Seeder Arguments
-`--users` how many regular users to ensure (default 5)
-`--projects` number of projects (default 12)
-`--donations` donation records (default 40)
-`--comments` top-level comments (default 60)
-`--max-replies` max replies per top-level comment (default 2)
-`--flush-existing` remove prior domain data
+Images:
+* `--with-images` creates colored placeholder profile avatars (initials) and project banner images.
+* `--force-images` regenerates images even if already present.
+* `--project-images-min N` / `--project-images-max M` controls random number of pictures per project (defaults 1..3).
+
+Example regenerating only images for existing data:
+```bash
+python manage.py seed --with-images --force-images --project-images-min 2 --project-images-max 4 --projects 0 --users 0 --donations 0 --comments 0
+```
+
+### Seeder Arguments (full)
+| Flag | Purpose | Default |
+|------|---------|---------|
+| `--users` | Ensure at least N regular users | 5 |
+| `--projects` | Create up to N sample projects | 12 |
+| `--donations` | Approx. donation rows | 40 |
+| `--comments` | Top-level comments | 60 |
+| `--max-replies` | Replies per top-level (0..N) | 2 |
+| `--flush-existing` | Delete prior domain data (keeps users) | off |
+| `--with-images` | Generate profile & project images if missing | off |
+| `--force-images` | Always (re)generate images | off |
+| `--project-images-min` | Min project pictures when creating images | 1 |
+| `--project-images-max` | Max project pictures when creating images | 3 |
+
+Media output goes to `media/profile_pictures/` and `media/project_pictures/`.
 
 ### PostgreSQL (optional)
 ```bash
@@ -70,9 +89,10 @@ python manage.py loaddata data.json
 ```
 
 ### Notes
-- Slugs auto-generate from titles; `backfill_slugs` command fills blanks.
-- Replies limited to one level for simplicity.
-- SECRET_KEY hardcoded for local use only.
+* Replies limited to one level for simplicity.
+* SECRET_KEY hardcoded for local/dev only – replace in production.
+* To use PostgreSQL in dev, set `DATABASE_URL` before running migrations.
+* Seeder is idempotent-ish: re-running adds only missing counts; pass `--flush-existing` to reset domain data.
 
 ### Next Ideas
 Project updates, reward tiers, API, caching, editing/deleting comments.

@@ -7,8 +7,11 @@ Validated against current implementation status (mid-September 2025). Use this t
 - [ ] `python manage.py migrate` succeeds
 - [ ] Superuser creation works
 - [ ] Media directory writeable (`media/` created automatically on first upload)
-- [ ] Seed command runs: `python manage.py seed_projects` (no errors)
-- [ ] Seed with `--flush-existing` resets data as expected
+- [ ] Seed command runs: `python manage.py seed` (no errors)
+- [ ] Seed with `--flush-existing` resets domain data (projects/categories/tags/donations/comments/ratings) but keeps users
+- [ ] Seed with `--with-images` generates profile & project images
+- [ ] Re-run with `--with-images` (no `--force-images`) does not duplicate images
+- [ ] Re-run with `--force-images --with-images` regenerates (timestamps or file hashes differ)
 
 ## 2. User Accounts
 - [ ] Register user -> activation email printed to console -> activation completes
@@ -22,6 +25,8 @@ Validated against current implementation status (mid-September 2025). Use this t
 - [ ] Attempt project with end <= start -> validation error shown
 - [ ] Multiple images upload -> all appear in carousel
 - [ ] Project with zero images -> placeholder displayed (list + detail + home)
+- [ ] Project seeded with images has between configured min..max images (default 1..3)
+- [ ] Regenerated images (with force) replace previous ones
 - [ ] Slug generated and detail accessible at `/projects/<slug>/`
 - [ ] Editing allowed before donations, blocked after first donation
 
@@ -68,6 +73,8 @@ Validated against current implementation status (mid-September 2025). Use this t
 
 ## 11. Accessibility & UI
 - [ ] All images have meaningful alt text or placeholder alt text
+- [ ] Generated avatar images visually show initials (legible size)
+- [ ] Project banners have readable overlaid text (sufficient contrast)
 - [ ] Progress bars announce percentage via assistive tech (aria-valuenow)
 - [ ] Keyboard navigation reaches all interactive controls
 
@@ -97,9 +104,11 @@ Validated against current implementation status (mid-September 2025). Use this t
 - [ ] CheckConstraint prevents invalid date save in admin shell
 - [ ] Multiple donations sum correctly across different users
 - [ ] Tag reuse (no duplicate rows for same name when seeding twice)
+- [ ] Image regeneration with `--force-images` does not create orphaned old files (count in media directories stable)
 
 ## 17. Logging / Messages
 - [ ] Success/error messages appear consistently after actions
+- [ ] Seeder outputs counts for Users/Projects/Donations/Ratings/Comments/Replies and Image generation numbers
 
 ## 18. Out-of-Scope / Deferred
 - [ ] Comment edit/delete (to be implemented)
